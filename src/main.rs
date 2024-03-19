@@ -26,13 +26,9 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream) {
     let buf_reader = BufReader::new(&mut stream);
-    let request_line = buf_reader
-        .lines()
-        .next()
-        .expect("error: Empty request")
-        .expect("error: couldn't parse request");
+    let request_lines = buf_reader.lines();
 
-    let (status_line, content) = parse_request_line(request_line);
+    let (status_line, content) = parse_request_line(request_lines);
 
     println!("content: {content}");
 
@@ -47,7 +43,14 @@ fn handle_connection(mut stream: TcpStream) {
         .expect("error: couldn't write response");
 }
 
-fn parse_request_line(request_line: String) -> (&'static str, String) {
+fn parse_request_line(
+    mut request_lines: std::io::Lines<BufReader<&mut TcpStream>>,
+) -> (&'static str, String) {
+    let request_line = request_lines
+        .next()
+        .expect("error: Empty request")
+        .expect("error: couldn't parse request line");
+
     let re = Regex::new(r"GET /(?<path>\S*) HTTP/1.1").expect("error: Couldn't compile regex");
 
     if re.is_match(&request_line) {
@@ -60,6 +63,14 @@ fn parse_request_line(request_line: String) -> (&'static str, String) {
 
         if path.is_empty() {
             return ("HTTP/1.1 200 OK", "".to_string());
+        }
+        if path == "user-agent" {
+            while let Some(request_line) = request_lines.next() {
+                let request_line = request_line.expect("error: couldn't parse request line");
+                if request_line.starts_with("User-Agent:") {
+                    return ("HTTP/1.1 200 OK", (&request_line[12..]).to_string());
+                }
+            }
         }
         if path.starts_with("echo/") {
             return ("HTTP/1.1 200 OK", (&path[5..]).to_string());
