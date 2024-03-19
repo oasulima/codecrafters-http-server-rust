@@ -2,6 +2,7 @@ use regex::Regex;
 use std::{
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
+    thread,
 };
 
 fn main() {
@@ -15,7 +16,9 @@ fn main() {
             Ok(_stream) => {
                 println!("accepted new connection");
 
-                handle_connection(_stream);
+                thread::spawn(|| {
+                    handle_connection(_stream);
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
