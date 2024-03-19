@@ -1,9 +1,19 @@
+use clap::Parser;
 use regex::Regex;
 use std::{
+    fs,
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     thread,
 };
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    #[arg(long)]
+    directory: String,
+}
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -31,14 +41,14 @@ fn handle_connection(mut stream: TcpStream) {
     let buf_reader = BufReader::new(&mut stream);
     let request_lines = buf_reader.lines();
 
-    let (status_line, content) = parse_request_line(request_lines);
+    let (status_line, content_type, content) = parse_request_line(request_lines);
 
     println!("content: {content}");
 
     let length = content.len();
 
     let response = format!(
-        "{status_line}\r\nContent-Type: text/plain\r\nContent-Length: {length}\r\n\r\n{content}"
+        "{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n{content}"
     );
 
     stream
@@ -48,7 +58,7 @@ fn handle_connection(mut stream: TcpStream) {
 
 fn parse_request_line(
     mut request_lines: std::io::Lines<BufReader<&mut TcpStream>>,
-) -> (&'static str, String) {
+) -> (&'static str, &'static str, String) {
     let request_line = request_lines
         .next()
         .expect("error: Empty request")
@@ -65,20 +75,37 @@ fn parse_request_line(
         println!("path: {path}");
 
         if path.is_empty() {
-            return ("HTTP/1.1 200 OK", "".to_string());
+            return ("HTTP/1.1 200 OK", "text/plain", "".to_string());
         }
         if path == "user-agent" {
             while let Some(request_line) = request_lines.next() {
                 let request_line = request_line.expect("error: couldn't parse request line");
                 if request_line.starts_with("User-Agent:") {
-                    return ("HTTP/1.1 200 OK", (&request_line[12..]).to_string());
+                    return (
+                        "HTTP/1.1 200 OK",
+                        "text/plain",
+                        (&request_line[12..]).to_string(),
+                    );
                 }
             }
         }
         if path.starts_with("echo/") {
-            return ("HTTP/1.1 200 OK", (&path[5..]).to_string());
+            return ("HTTP/1.1 200 OK", "text/plain", (&path[5..]).to_string());
+        }
+        if path.starts_with("files/") {
+            let args = Args::parse();
+
+            let dir = args.directory;
+            let file_name = &path[6..];
+
+            let file_path = format!("{dir}/{file_name}");
+
+            let file = fs::read_to_string(file_path);
+            if file.is_ok() {
+                return ("HTTP/1.1 200 OK", "application/octet-stream", file.unwrap());
+            }
         }
     }
 
-    ("HTTP/1.1 404 OK", "".to_string())
+    ("HTTP/1.1 404 OK", "text/plain", "".to_string())
 }
