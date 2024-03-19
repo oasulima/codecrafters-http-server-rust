@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::{
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
@@ -31,15 +32,39 @@ fn handle_connection(mut stream: TcpStream) {
         .expect("error: Empty request")
         .expect("error: couldn't parse request");
 
-    let status_line = if request_line == "GET / HTTP/1.1" {
-        "HTTP/1.1 200 OK"
-    } else {
-        "HTTP/1.1 404 OK"
-    };
+    let (status_line, content) = parse_request_line(request_line);
 
-    let response = format!("{status_line}\r\n\r\n");
+    println!("content: {content}");
+
+    let length = content.len();
+
+    let response = format!(
+        "{status_line}\r\nContent-Type: text/plain\r\nContent-Length: {length}\r\n\r\n{content}"
+    );
 
     stream
         .write_all(response.as_bytes())
         .expect("error: couldn't write response");
+}
+
+fn parse_request_line(request_line: String) -> (&'static str, String) {
+    let re = Regex::new(r"GET /(?<path>\S*) HTTP/1.1").expect("error: Couldn't compile regex");
+
+    if re.is_match(&request_line) {
+        let (_, [path]) = re
+            .captures(&request_line)
+            .expect("error: Couldn't get path")
+            .extract();
+
+        println!("path: {path}");
+
+        if path.is_empty() {
+            return ("HTTP/1.1 200 OK", "".to_string());
+        }
+        if path.starts_with("echo/") {
+            return ("HTTP/1.1 200 OK", (&path[5..]).to_string());
+        }
+    }
+
+    ("HTTP/1.1 404 OK", "".to_string())
 }
